@@ -1,6 +1,7 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from graficos import graficar
+from graficos import *
+from dividir_datos import *
+from parada_temprana import train_parada_temprana
 
 # Generador basado en ejemplo del curso CS231 de Stanford: 
 # CS231n Convolutional Neural Networks for Visual Recognition
@@ -99,8 +100,7 @@ def clasificar(x, pesos):
 def train(x, t, pesos, learning_rate, epochs):
     # Cantidad de filas (i.e. cantidad de ejemplos)
     m = np.size(x, 0)
-    loss_totales=[] 
-    
+    loss_totales=[]
     for i in range(epochs):
         # Ejecucion de la red hacia adelante
         resultados_feed_forward = ejecutar_adelante(x, pesos)
@@ -127,9 +127,9 @@ def train(x, t, pesos, learning_rate, epochs):
         loss = (1 / m) * np.sum( -np.log( p[range(m), t] ))
         loss_totales.append(loss)
         # Mostramos solo cada 1000 epochs
-        '''if i %1000 == 0:
-            print("Loss epoch", i, ":", loss)'''
-
+        if i %1000 == 0:
+            print("Loss epoch", i, ":", loss)
+        
         # Extraemos los pesos a variables locales
         w1 = pesos["w1"]
         b1 = pesos["b1"]
@@ -166,51 +166,40 @@ def train(x, t, pesos, learning_rate, epochs):
         pesos["b2"] = b2
     return pesos,loss_totales  # Devuelve los pesos entrenados
 
-def dividir_entrenamiento_prueba(x, t, test_size=0.2, random_state=None):
-    if random_state is not None:
-        np.random.seed(random_state)
-
-    num_examples = x.shape[0]
-    num_test_examples = int(num_examples * test_size)
-    indices = np.random.permutation(num_examples)
-
-    x_prueba = x[indices[:num_test_examples]]
-    t_prueba = t[indices[:num_test_examples]]
-    x_entrenamiento = x[indices[num_test_examples:]]
-    t_entrenamiento = t[indices[num_test_examples:]]
-
-    return x_entrenamiento, x_prueba, t_entrenamiento, t_prueba
-
 def calcular_precision(predicciones, clases_reales):
     return np.mean(predicciones == clases_reales)
 
-def iniciar(numero_clases, numero_ejemplos, graficar_datos):
+def iniciar(numero_clases, numero_ejemplos, graficar_datos,parada):
     # Generamos datos
     x, t = generar_datos_clasificacion(numero_ejemplos, numero_clases)
-    x_entrenamiento, x_prueba, t_entrenamiento, t_prueba = dividir_entrenamiento_prueba(x, t, test_size=0.2, random_state=42)
-
-    # Inicializa pesos de la red
+        # Inicializa pesos de la red
     NEURONAS_CAPA_OCULTA = 100
     NEURONAS_ENTRADA = 2
     pesos = inicializar_pesos(n_entrada=NEURONAS_ENTRADA, n_capa_2=NEURONAS_CAPA_OCULTA, n_capa_3=numero_clases)
-
-    # Entrena
     LEARNING_RATE=1
     EPOCHS=10000
-    #train(x, t, pesos, LEARNING_RATE, EPOCHS)
-    pesos_entrenados, loss_totales=train(x_entrenamiento, t_entrenamiento, pesos, LEARNING_RATE, EPOCHS)
-
+    if not parada:
+        # Utilizamos un nuevo conjunto de datos para el Ejercicio 2
+        x_entrenamiento, x_prueba, t_entrenamiento, t_prueba = dividir_entrenamiento_prueba(x, t, test_size=0.2, random_state=42)
+        # Entrena
+        pesos_entrenados, loss_entrenamiento_totales=train(x_entrenamiento, t_entrenamiento, pesos, LEARNING_RATE, EPOCHS)
+    if parada:
+        # Utilizamos un nuevo conjunto de datos para el Ejercicio 3
+        tolerancia = 0.001
+        paciencia = 10
+        N=100
+        x_entrenamiento, x_validacion, x_prueba, t_entrenamiento, t_validacion, t_prueba = dividir_entrenamiento_validacion_prueba(x, t, test_size=0.2, validacion_size=0.2, random_state=42)
+        mejores_pesos,pesos_entrenados, loss_entrenamiento_totales, loss_validacion_totales=train_parada_temprana(x_entrenamiento, t_entrenamiento, x_validacion, t_validacion, pesos, LEARNING_RATE, EPOCHS, paciencia, tolerancia, N)
     # Evaluar en el conjunto de prueba
     resultados_prueba = clasificar(x_prueba, pesos_entrenados)
-    resultados_prueba = np.array(resultados_prueba)  # Convertir a arreglo NumPy
-    #if resultados_prueba.ndim == 1:
-    predicciones_test = np.round(resultados_prueba)
-    '''else:
-    predicciones_test = np.argmax(resultados_prueba)'''
-    accuracy_prueba = calcular_precision(predicciones_test,t_prueba)
+    accuracy_prueba = calcular_precision(resultados_prueba,t_prueba)
     print("Accuracy en el conjunto de prueba:", accuracy_prueba)
+
     if graficar_datos:
-        graficar(x_entrenamiento,t_entrenamiento,x_prueba,t_prueba,loss_totales,EPOCHS)
-
-
-iniciar(numero_clases=3, numero_ejemplos=300, graficar_datos=False)
+        graficar(x_entrenamiento,t_entrenamiento,x_prueba,t_prueba)
+        if not parada:
+            graficar_perdida_sin_parada(loss_entrenamiento_totales,EPOCHS)
+        else:
+            graficar_perdida_con_parada(N,loss_entrenamiento_totales,loss_validacion_totales,EPOCHS)
+            
+iniciar(numero_clases=3, numero_ejemplos=300, graficar_datos=True,parada=True)
